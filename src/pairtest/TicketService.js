@@ -11,10 +11,18 @@ const TICKET_PRICES = {
 
 const MAX_TICKETS = 25;
 
+/**
+ * Orchestrates ticket purchases: validates the request, charges the account,
+ * and reserves seats via the injected payment and reservation services.
+ */
 export default class TicketService {
   #paymentService;
   #reservationService;
 
+  /**
+   * By default uses real `TicketPaymentService` and `SeatReservationService`. Pass substitutes when testing;
+   * payment must implement `makePayment(accountId, totalAmountToPay)`, seats must implement `reserveSeat(accountId, totalSeatsToAllocate)`.
+   */
   constructor(
     paymentService = new TicketPaymentService(),
     reservationService = new SeatReservationService(),
@@ -23,6 +31,14 @@ export default class TicketService {
     this.#reservationService = reservationService;
   }
 
+  /**
+   * Validates the purchase, then requests payment and seat allocation.
+   * Infants are free and do not receive a seat.
+   *
+   * @param {number} accountId - Positive integer account identifier.
+   * @param {...TicketTypeRequest} ticketTypeRequests - One or more ticket line items (type and quantity each).
+   * @throws {InvalidPurchaseException} When the request fails business or input validation.
+   */
   purchaseTickets(accountId, ...ticketTypeRequests) {
     this.#validateAccountId(accountId);
     this.#validateRequests(ticketTypeRequests);
