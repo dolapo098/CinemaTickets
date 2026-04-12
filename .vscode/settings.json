@@ -1,0 +1,8 @@
+{
+  "jest.jestCommandLine": "npm run test:jest --",
+  "jest.rootPath": "${workspaceFolder}",
+  "jest.nodeEnv": {
+    "NODE_OPTIONS": "--experimental-vm-modules"
+  },
+  "jestrunner.jestCommand": "npm run test:jest --"
+}
