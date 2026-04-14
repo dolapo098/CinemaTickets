@@ -2,14 +2,11 @@ import TicketTypeRequest from "./lib/TicketTypeRequest.js";
 import InvalidPurchaseException from "./lib/InvalidPurchaseException.js";
 import TicketPaymentService from "../thirdparty/paymentgateway/TicketPaymentService.js";
 import SeatReservationService from "../thirdparty/seatbooking/SeatReservationService.js";
-
-const TICKET_PRICES = {
-  INFANT: 0,
-  CHILD: 15,
-  ADULT: 25,
-};
-
-const MAX_TICKETS = 25;
+import {
+  TICKET_PRICES,
+  MAX_TICKETS_PER_PURCHASE,
+  INVALID_PURCHASE_MESSAGE,
+} from "./lib/ticketPurchaseConstants.js";
 
 /**
  * Orchestrates ticket purchases: validates the request, charges the account,
@@ -22,6 +19,8 @@ export default class TicketService {
   /**
    * By default uses real `TicketPaymentService` and `SeatReservationService`. Pass substitutes when testing;
    * payment must implement `makePayment(accountId, totalAmountToPay)`, seats must implement `reserveSeat(accountId, totalSeatsToAllocate)`.
+   *
+   * @remarks Dependency injection
    */
   constructor(
     paymentService = new TicketPaymentService(),
@@ -57,30 +56,43 @@ export default class TicketService {
     );
   }
 
+  /**
+   * Validates that the account ID is a positive integer.
+   */
   #validateAccountId(accountId) {
     if (!Number.isInteger(accountId) || accountId <= 0) {
-      throw new InvalidPurchaseException(
-        "Account ID must be a positive integer greater than zero.",
-      );
+      throw new InvalidPurchaseException(INVALID_PURCHASE_MESSAGE.ACCOUNT_ID);
     }
   }
 
+  /**
+   * Validates that ticket requests are present and well formed.
+   */
   #validateRequests(ticketTypeRequests) {
     if (!ticketTypeRequests || ticketTypeRequests.length === 0) {
       throw new InvalidPurchaseException(
-        "At least one ticket request must be provided.",
+        INVALID_PURCHASE_MESSAGE.NO_TICKET_REQUESTS,
       );
     }
 
     for (const request of ticketTypeRequests) {
       if (!(request instanceof TicketTypeRequest)) {
         throw new InvalidPurchaseException(
-          "All ticket requests must be instances of TicketTypeRequest.",
+          INVALID_PURCHASE_MESSAGE.REQUEST_NOT_TICKET_TYPE_REQUEST,
+        );
+      }
+
+      if (request.getNoOfTickets() <= 0) {
+        throw new InvalidPurchaseException(
+          INVALID_PURCHASE_MESSAGE.TICKET_QUANTITY_NOT_POSITIVE,
         );
       }
     }
   }
 
+  /**
+   * Aggregates ticket requests into adult, child, and infant totals.
+   */
   #countByType(ticketTypeRequests) {
     const counts = { ADULT: 0, CHILD: 0, INFANT: 0 };
 
@@ -91,28 +103,34 @@ export default class TicketService {
     return counts;
   }
 
+  /**
+   * Enforces purchase business rules against the aggregated ticket counts.
+   */
   #validateBusinessRules(counts) {
     const totalTickets = counts.ADULT + counts.CHILD + counts.INFANT;
 
-    if (totalTickets > MAX_TICKETS) {
+    if (totalTickets > MAX_TICKETS_PER_PURCHASE) {
       throw new InvalidPurchaseException(
-        "Cannot purchase more than 25 tickets at once.",
+        INVALID_PURCHASE_MESSAGE.MAX_TICKETS_EXCEEDED,
       );
     }
 
     if (counts.ADULT === 0) {
       throw new InvalidPurchaseException(
-        "Child and Infant tickets cannot be purchased without at least one Adult ticket.",
+        INVALID_PURCHASE_MESSAGE.ADULT_TICKET_REQUIRED,
       );
     }
 
     if (counts.INFANT > counts.ADULT) {
       throw new InvalidPurchaseException(
-        "Number of Infants cannot exceed the number of Adults.",
+        INVALID_PURCHASE_MESSAGE.TOO_MANY_INFANTS,
       );
     }
   }
 
+  /**
+   * Calculates the total amount to charge for the requested tickets.
+   */
   #calculateTotalAmount(counts) {
     return (
       counts.ADULT * TICKET_PRICES.ADULT +
@@ -121,8 +139,11 @@ export default class TicketService {
     );
   }
 
+  /**
+   * Calculates the number of seats to reserve for the purchase.
+   */
   #calculateTotalSeats(counts) {
-    // Infants do not require a seat — they sit on an Adult's lap
+    // Infants sit on an adult's lap and are not allocated a seat.
     return counts.ADULT + counts.CHILD;
   }
 }

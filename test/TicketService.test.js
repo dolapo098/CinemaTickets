@@ -2,6 +2,11 @@ import { jest, describe, test, expect, beforeEach } from "@jest/globals";
 import TicketService from "../src/pairtest/TicketService.js";
 import TicketTypeRequest from "../src/pairtest/lib/TicketTypeRequest.js";
 import InvalidPurchaseException from "../src/pairtest/lib/InvalidPurchaseException.js";
+import {
+  TICKET_PRICES,
+  MAX_TICKETS_PER_PURCHASE,
+  INVALID_PURCHASE_MESSAGE,
+} from "../src/pairtest/lib/ticketPurchaseConstants.js";
 
 const makePayment = jest.fn();
 const reserveSeat = jest.fn();
@@ -18,14 +23,6 @@ const TicketType = Object.freeze({
   CHILD: "CHILD",
   INFANT: "INFANT",
 });
-
-const TicketPrice = Object.freeze({
-  ADULT: 25,
-  CHILD: 15,
-  INFANT: 0,
-});
-
-const MaxTicketsPerPurchase = 25;
 
 const AccountId = Object.freeze({
   DEFAULT_VALID: 1,
@@ -51,6 +48,11 @@ function infantTickets(quantity) {
   return ticket(TicketType.INFANT, quantity);
 }
 
+function expectInvalidPurchase(act, message) {
+  expect(act).toThrow(InvalidPurchaseException);
+  expect(act).toThrow(message);
+}
+
 describe("TicketService", () => {
   beforeEach(() => {
     makePayment.mockClear();
@@ -71,7 +73,7 @@ describe("TicketService", () => {
         createTicketService().purchaseTickets(accountId, ...requests);
 
       // Assert
-      expect(act).toThrow(InvalidPurchaseException);
+      expectInvalidPurchase(act, INVALID_PURCHASE_MESSAGE.ACCOUNT_ID);
       expect(makePayment).not.toHaveBeenCalled();
       expect(reserveSeat).not.toHaveBeenCalled();
     });
@@ -85,7 +87,10 @@ describe("TicketService", () => {
       createTicketService().purchaseTickets(accountId, ...requests);
 
       // Assert
-      expect(makePayment).toHaveBeenCalledWith(accountId, TicketPrice.ADULT);
+      expect(makePayment).toHaveBeenCalledWith(
+        accountId,
+        TICKET_PRICES.ADULT,
+      );
       expect(reserveSeat).toHaveBeenCalledWith(accountId, 1);
     });
   });
@@ -99,7 +104,7 @@ describe("TicketService", () => {
       const act = () => createTicketService().purchaseTickets(accountId);
 
       // Assert
-      expect(act).toThrow(InvalidPurchaseException);
+      expectInvalidPurchase(act, INVALID_PURCHASE_MESSAGE.NO_TICKET_REQUESTS);
       expect(makePayment).not.toHaveBeenCalled();
     });
 
@@ -118,7 +123,27 @@ describe("TicketService", () => {
         );
 
       // Assert
-      expect(act).toThrow(InvalidPurchaseException);
+      expectInvalidPurchase(
+        act,
+        INVALID_PURCHASE_MESSAGE.REQUEST_NOT_TICKET_TYPE_REQUEST,
+      );
+      expect(makePayment).not.toHaveBeenCalled();
+    });
+
+    test("rejects ticket line with zero quantity", () => {
+      // Arrange
+      const accountId = AccountId.DEFAULT_VALID;
+      const requests = [new TicketTypeRequest(TicketType.ADULT, 0)];
+
+      // Act
+      const act = () =>
+        createTicketService().purchaseTickets(accountId, ...requests);
+
+      // Assert
+      expectInvalidPurchase(
+        act,
+        INVALID_PURCHASE_MESSAGE.TICKET_QUANTITY_NOT_POSITIVE,
+      );
       expect(makePayment).not.toHaveBeenCalled();
     });
   });
@@ -134,7 +159,10 @@ describe("TicketService", () => {
         createTicketService().purchaseTickets(accountId, ...requests);
 
       // Assert
-      expect(act).toThrow(InvalidPurchaseException);
+      expectInvalidPurchase(
+        act,
+        INVALID_PURCHASE_MESSAGE.ADULT_TICKET_REQUIRED,
+      );
       expect(makePayment).not.toHaveBeenCalled();
     });
 
@@ -148,7 +176,10 @@ describe("TicketService", () => {
         createTicketService().purchaseTickets(accountId, ...requests);
 
       // Assert
-      expect(act).toThrow(InvalidPurchaseException);
+      expectInvalidPurchase(
+        act,
+        INVALID_PURCHASE_MESSAGE.ADULT_TICKET_REQUIRED,
+      );
     });
   });
 
@@ -163,7 +194,7 @@ describe("TicketService", () => {
         createTicketService().purchaseTickets(accountId, ...requests);
 
       // Assert
-      expect(act).toThrow(InvalidPurchaseException);
+      expectInvalidPurchase(act, INVALID_PURCHASE_MESSAGE.TOO_MANY_INFANTS);
       expect(makePayment).not.toHaveBeenCalled();
     });
 
@@ -174,7 +205,7 @@ describe("TicketService", () => {
       const infantCount = 2;
       const requests = [adultTickets(adultCount), infantTickets(infantCount)];
       const expectedTotalAmount =
-        adultCount * TicketPrice.ADULT + infantCount * TicketPrice.INFANT;
+        adultCount * TICKET_PRICES.ADULT + infantCount * TICKET_PRICES.INFANT;
       const expectedSeats = adultCount;
 
       // Act
@@ -201,22 +232,29 @@ describe("TicketService", () => {
         createTicketService().purchaseTickets(accountId, ...requests);
 
       // Assert
-      expect(act).toThrow(InvalidPurchaseException);
+      expectInvalidPurchase(
+        act,
+        INVALID_PURCHASE_MESSAGE.MAX_TICKETS_EXCEEDED,
+      );
       expect(makePayment).not.toHaveBeenCalled();
     });
 
     test("accepts exactly 25 tickets", () => {
       // Arrange
       const accountId = AccountId.DEFAULT_VALID;
-      const requests = [adultTickets(MaxTicketsPerPurchase)];
-      const expectedTotalAmount = MaxTicketsPerPurchase * TicketPrice.ADULT;
+      const requests = [adultTickets(MAX_TICKETS_PER_PURCHASE)];
+      const expectedTotalAmount =
+        MAX_TICKETS_PER_PURCHASE * TICKET_PRICES.ADULT;
 
       // Act
       createTicketService().purchaseTickets(accountId, ...requests);
 
       // Assert
       expect(makePayment).toHaveBeenCalledWith(accountId, expectedTotalAmount);
-      expect(reserveSeat).toHaveBeenCalledWith(accountId, MaxTicketsPerPurchase);
+      expect(reserveSeat).toHaveBeenCalledWith(
+        accountId,
+        MAX_TICKETS_PER_PURCHASE,
+      );
     });
   });
 
@@ -225,7 +263,8 @@ describe("TicketService", () => {
       // Arrange
       const accountId = AccountId.DEFAULT_VALID;
       const requests = [adultTickets(2), childTickets(1)];
-      const expectedTotalAmount = 2 * TicketPrice.ADULT + TicketPrice.CHILD;
+      const expectedTotalAmount =
+        2 * TICKET_PRICES.ADULT + TICKET_PRICES.CHILD;
 
       // Act
       createTicketService().purchaseTickets(accountId, ...requests);
@@ -243,7 +282,9 @@ describe("TicketService", () => {
         infantTickets(1),
       ];
       const expectedTotalAmount =
-        2 * TicketPrice.ADULT + 2 * TicketPrice.CHILD + TicketPrice.INFANT;
+        2 * TICKET_PRICES.ADULT +
+        2 * TICKET_PRICES.CHILD +
+        TICKET_PRICES.INFANT;
 
       // Act
       createTicketService().purchaseTickets(accountId, ...requests);
